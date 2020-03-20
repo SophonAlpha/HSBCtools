@@ -9,15 +9,18 @@ import argparse
 import glob
 import re
 import math
-import pdfplumber
 import csv
+import pdfplumber
 
 
 class PayByTxnError(Exception):
-    pass
+    """ custom error class """
 
 
 def main():
+    """
+    Main function. Process all PDF files submitted via command line parameter.
+    """
     args = parse_args()
     pdf_files = glob.glob(args.input)
     for _, pdf_file in enumerate(pdf_files):
@@ -43,6 +46,9 @@ def main():
 
 
 def get_stmt_date(text):
+    """
+    Extract the date of the credit card statement.
+    """
     months = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     pattern = re.compile(
         r'(?<=Statement Date  )[0-9]{2}' + months + r'[0-9]{4}',
@@ -51,6 +57,12 @@ def get_stmt_date(text):
 
 
 def get_debit_value(text):
+    """
+    Extract the debit value of the statement document. The debit value is the
+    amount to pay back the new credit card transactions. This value is later
+    used to check the sum of all transactions in the statement match the debit
+    value.
+    """
     pattern = re.compile(
         r'(?<=Your specified account will be debited '
         r'for AED )[0-9]*,?[0-9]+\.[0-9]{2}',
@@ -60,6 +72,9 @@ def get_debit_value(text):
 
 
 def extract_text(pdf_file):
+    """
+    Extract all text from a PDF file.
+    """
     pdf = pdfplumber.open(pdf_file)
     text = ''
     for page in pdf.pages:
@@ -68,6 +83,9 @@ def extract_text(pdf_file):
 
 
 def extract_transaction_lines(txt):
+    """
+    Extract all text lines that represent credit card transactions.
+    """
     months = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     pattern = re.compile(
         r'(?P<PostingDate>[0-9]{2}' + months + r' )' + \
@@ -81,7 +99,8 @@ def extract_transaction_lines(txt):
 
 def remove_paid_txns(transactions):
     """
-    Remove all credit card balance payments.
+    Remove all transactions that are payments towards outstanding credit card
+    balances.
     """
     paid_txns = [idx for idx, txn in enumerate(transactions)
                  if txn['TransactionDetails'].find('PAY BY 036-288942-001') >= 0 and \
@@ -95,12 +114,18 @@ def remove_paid_txns(transactions):
 
 
 def strip_spaces(lines):
+    """
+    Clean up transaction data by removing leading and trailing spaces.
+    """
     lines = [{key: line[key].strip() for key in line.keys()}
              for line in lines]
     return lines
 
 
 def string2float(transactions):
+    """
+    Convert floating point number in string format to float.
+    """
     txns_updated = []
     for txn in transactions:
         txn['Amount'] = -1 * float(txn['Amount'].replace(',', ''))\
@@ -111,6 +136,9 @@ def string2float(transactions):
 
 
 def change_date_fmt(transactions, stmt_date):
+    """
+    Convert dates from DDMMM to DD/MM/YYYY format.
+    """
     mmap = {'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
             'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
             'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'}
@@ -118,13 +146,13 @@ def change_date_fmt(transactions, stmt_date):
     stmt_year = int(stmt_date[-4:])
     for idx, txn in enumerate(transactions):
         post_day = txn['PostingDate'][:2]
-        post_month= txn['PostingDate'][-3:]
+        post_month = txn['PostingDate'][-3:]
         if stmt_month == 'JAN' and post_month == 'DEC':
             txn['PostingDate'] = f'{post_day}/{mmap[post_month]}/{stmt_year - 1}'
         else:
             txn['PostingDate'] = f'{post_day}/{mmap[post_month]}/{stmt_year}'
         txn_day = txn['TransactionDate'][:2]
-        txn_month= txn['TransactionDate'][-3:]
+        txn_month = txn['TransactionDate'][-3:]
         if stmt_month == 'JAN' and txn_month == 'DEC':
             txn['TransactionDate'] = f'{txn_day}/{mmap[txn_month]}/{stmt_year - 1}'
         else:
@@ -149,11 +177,17 @@ def sort_by_date(item):
 
 
 def get_total_amount(transactions):
+    """
+    Sum of all new credit card transactions.
+    """
     amount = sum([txn['Amount'] for txn in transactions])
     return amount
 
 
 def save_to_csv(transactions, pdf_file):
+    """
+    Save extracted credit card transactions to CSV file.
+    """
     print()
     print(f'processing transactions from file \'{pdf_file}\'')
     print()
