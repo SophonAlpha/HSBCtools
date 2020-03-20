@@ -29,6 +29,7 @@ def main():
         transactions = remove_paid_txns(transactions)
         transactions = string2float(transactions)
         transactions = change_date_fmt(transactions, stmt_date)
+        transactions = sort_txnx(transactions)
         total_amount = get_total_amount(transactions)
         if math.isclose(debit_value, total_amount, abs_tol=0.001):
             pass
@@ -51,7 +52,8 @@ def get_stmt_date(text):
 
 def get_debit_value(text):
     pattern = re.compile(
-        r'(?<=Your specified account will be debited for AED )[0-9]*,?[0-9]+\.[0-9]{2}',
+        r'(?<=Your specified account will be debited '
+        r'for AED )[0-9]*,?[0-9]+\.[0-9]{2}',
         re.MULTILINE)
     debit_value = -1 * float(pattern.search(text)[0].replace(',', ''))
     return debit_value
@@ -129,6 +131,21 @@ def change_date_fmt(transactions, stmt_date):
             txn['TransactionDate'] = f'{txn_day}/{mmap[txn_month]}/{stmt_year}'
         transactions[idx] = txn
     return transactions
+
+
+def sort_txnx(transactions):
+    """ Sort list of transactions by 'PostingDate'. """
+    transactions = sorted(transactions, key=sort_by_date)
+    return transactions
+
+
+def sort_by_date(item):
+    """ Sorting function for sorted() function. """
+    date_parts = item['PostingDate'].split('/')
+    day = date_parts[0]
+    month = date_parts[1]
+    year = date_parts[2]
+    return year, month, day
 
 
 def get_total_amount(transactions):
