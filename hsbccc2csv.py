@@ -51,7 +51,7 @@ def get_stmt_date(text):
     """
     months = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     pattern = re.compile(
-        r'(?<=Statement Date  )[0-9]{2}' + months + r'[0-9]{4}',
+        r'(?<=Statement Date {2})[0-9]{2}' + months + r'[0-9]{4}',
         re.MULTILINE)
     return pattern.search(text)[0]
 
@@ -88,9 +88,9 @@ def extract_transaction_lines(txt):
     """
     months = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
     pattern = re.compile(
-        r'(?P<PostingDate>[0-9]{2}' + months + r' )' + \
-        r'(?P<TransactionDate>[0-9]{2}' + months + r' )' + \
-        r'(?P<TransactionDetails>.+)' + \
+        r'(?P<PostingDate>[0-9]{2}' + months + r' )' +
+        r'(?P<TransactionDate>[0-9]{2}' + months + r' )' +
+        r'(?P<TransactionDetails>.+)' +
         r'(?P<Amount> [0-9]+,?[0-9]*\.[0-9]{2} {0,2}(CR)*$)',
         re.MULTILINE)
     lines = [match.groupdict() for match in pattern.finditer(txt)]
@@ -103,8 +103,9 @@ def remove_paid_txns(transactions):
     balances.
     """
     paid_txns = [idx for idx, txn in enumerate(transactions)
-                 if txn['TransactionDetails'].find('PAY BY 036-288942-001') >= 0 and \
-                txn['Amount'][-2:] == 'CR']
+                 if txn['TransactionDetails'].find(
+                 'PAY BY 036-288942-001') >= 0 and
+                 txn['Amount'][-2:] == 'CR']
     if len(paid_txns) == 0:
         raise PayByTxnError('\'PAY BY\' transaction(s) not found. '
                             'At least one transaction expected.')
@@ -148,13 +149,17 @@ def change_date_fmt(transactions, stmt_date):
         post_day = txn['PostingDate'][:2]
         post_month = txn['PostingDate'][-3:]
         if stmt_month == 'JAN' and post_month == 'DEC':
-            txn['PostingDate'] = f'{post_day}/{mmap[post_month]}/{stmt_year - 1}'
+            txn['PostingDate'] = f'{post_day}/' \
+                                 f'{mmap[post_month]}/' \
+                                 f'{stmt_year - 1}'
         else:
             txn['PostingDate'] = f'{post_day}/{mmap[post_month]}/{stmt_year}'
         txn_day = txn['TransactionDate'][:2]
         txn_month = txn['TransactionDate'][-3:]
         if stmt_month == 'JAN' and txn_month == 'DEC':
-            txn['TransactionDate'] = f'{txn_day}/{mmap[txn_month]}/{stmt_year - 1}'
+            txn['TransactionDate'] = f'{txn_day}/' \
+                                     f'{mmap[txn_month]}/' \
+                                     f'{stmt_year - 1}'
         else:
             txn['TransactionDate'] = f'{txn_day}/{mmap[txn_month]}/{stmt_year}'
         transactions[idx] = txn
