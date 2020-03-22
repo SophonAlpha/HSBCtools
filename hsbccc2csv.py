@@ -24,10 +24,24 @@ class NoTextError(Exception):
     """
 
 
-class DebitAmountDontMatchError(Exception):
+class PaymentsDontMatchError(Exception):
     """
-    Custom error class: thrown when debit value and total amount of all credit
-    card transaction don't match.
+    Custom error class: thrown when payments value and sum of all payment
+    transactions transaction don't match.
+    """
+
+
+class NewChargesDontMatchError(Exception):
+    """
+    Custom error class: thrown when new charges value and sum of all charges
+    transactions don't match.
+    """
+
+
+class ClosingBalanceDontMatchError(Exception):
+    """
+    Custom error class: thrown when closing balance and calculated closing
+    balance don't match.
     """
 
 
@@ -39,16 +53,23 @@ def main():
     pdf_files = glob.glob(args.input)
     for _, pdf_file in enumerate(pdf_files):
         try:
-            process_PDF_file(pdf_file)
+            process_pdf_file(pdf_file)
         except PayByTxnError as err:
             print('Error: ' + f'{err}')
         except NoTextError as err:
             print('Error: ' + f'{err}')
-        except DebitAmountDontMatchError as err:
+        except PaymentsDontMatchError as err:
+            print('Error: ' + f'{err}')
+        except NewChargesDontMatchError as err:
+            print('Error: ' + f'{err}')
+        except ClosingBalanceDontMatchError as err:
             print('Error: ' + f'{err}')
 
 
-def process_PDF_file(pdf_file):
+def process_pdf_file(pdf_file):
+    """
+    Process a single PDF file.
+    """
     print()
     print(f'processing transactions from file \'{pdf_file}\'')
     print()
@@ -82,34 +103,25 @@ def get_account_summary(text):
     Extract account summary.
     """
     pattern = re.compile(
-        r'(?<=Account Summary\n Opening balance  Payments/Credits  New '
-        r'charges/debits  Closing balance\n -  \+  =\n )'
-        r'(?P<OpeningBalance>[0-9]*,?[0-9]+\.[0-9]{2})  '
-        r'(?P<Payments>[0-9]*,?[0-9]+\.[0-9]{2}) '
-        r'(?P<NewCharges>[0-9]*,?[0-9]+\.[0-9]{2}) '
+        r'(?<=Account Summary\n Opening balance {2}Payments/Credits {2}New '
+        r'charges/debits {2}Closing balance\n - {2}\+ {2}=\n )'
+        r'(?P<OpeningBalance>[0-9]*,?[0-9]+\.[0-9]{2}(CR)?) +'
+        r'(?P<Payments>[0-9]*,?[0-9]+\.[0-9]{2}) +'
+        r'(?P<NewCharges>[0-9]*,?[0-9]+\.[0-9]{2}) +'
         r'(?P<ClosingBalance>[0-9]*,?[0-9]+\.[0-9]{2})',
         re.MULTILINE)
     match = pattern.search(text).groupdict()
-    opening_balance = float(match['OpeningBalance'].replace(',', ''))
+    if match['OpeningBalance'][-2:] == 'CR':
+        opening_balance = float(match['OpeningBalance'][:-2].replace(',', ''))
+    else:
+        opening_balance = -1 * float(match['OpeningBalance'].replace(',', ''))
     payments = float(match['Payments'].replace(',', ''))
-    new_charges = float(match['NewCharges'].replace(',', ''))
-    closing_balance = float(match['ClosingBalance'].replace(',', ''))
+    new_charges = -1 * float(match['NewCharges'].replace(',', ''))
+    if match['ClosingBalance'][-2:] == 'CR':
+        closing_balance = float(match['ClosingBalance'][:-2].replace(',', ''))
+    else:
+        closing_balance = -1 * float(match['ClosingBalance'].replace(',', ''))
     return opening_balance, payments, new_charges, closing_balance
-
-
-def get_closing_balance(text):
-    """
-    Extract the closing balance of the statement document. The closing balance
-    is the amount to pay back the new credit card transactions. This value is
-    later used to check the sum of all transactions in the statement match the
-    debit value.
-    """
-    pattern = re.compile(
-        r'(?<=Your specified account will be debited '
-        r'for AED )[0-9]*,?[0-9]+\.[0-9]{2}',
-        re.MULTILINE)
-    closing_balance = -1 * float(pattern.search(text)[0].replace(',', ''))
-    return closing_balance
 
 
 def extract_text(pdf_file):
@@ -140,28 +152,6 @@ def extract_transaction_lines(txt):
         re.MULTILINE)
     lines = [match.groupdict() for match in pattern.finditer(txt)]
     return lines
-
-
-def remove_paid_txns(transactions):
-    """
-    Remove all transactions that are payments towards outstanding credit card
-    balances.
-    """
-    paid_txns = [idx for idx, txn in enumerate(transactions)
-                 if (txn['TransactionDetails'].find(
-            'PAY BY 036-288942-001') >= 0 or
-                     txn['TransactionDetails'].find(
-                         'PAY BY 036-271625-001') >= 0 or
-                     txn['TransactionDetails'].find(
-                         'PTB') >= 0
-                     ) and
-                 txn['Amount'][-2:] == 'CR']
-    if len(paid_txns) == 0:
-        raise PayByTxnError('\'PAY BY\' transaction(s) not found. '
-                            'At least one transaction expected.')
-    for idx in paid_txns:
-        del transactions[idx]
-    return transactions
 
 
 def strip_spaces(lines):
@@ -222,14 +212,6 @@ def sort_txnx(transactions):
     return transactions
 
 
-def get_payments_debits(transactions):
-    payments = sum([txn['Amount']
-                    for txn in transactions if txn['Amount'] >= 0])
-    debits = sum([txn['Amount']
-                  for txn in transactions if txn['Amount'] < 0])
-    return payments, debits
-
-
 def sort_by_date(item):
     """ Sorting function for sorted() function. """
     date_parts = item['PostingDate'].split('/')
@@ -239,24 +221,41 @@ def sort_by_date(item):
     return year, month, day
 
 
-def get_total_amount(transactions):
-    """
-    Sum of all new credit card transactions.
-    """
-    amount = sum([txn['Amount'] for txn in transactions])
-    return amount
-
-
 def validate_txns(opening_balance, payments, new_charges, closing_balance,
                   transactions):
-    if math.isclose(debit_value, total_amount, abs_tol=0.001):
+    """
+    Run a few checks to verify the transaction data read from the PDF file.
+    """
+    # check payments transactions match
+    payments_txns = sum([txn['Amount']
+                         for txn in transactions if txn['Amount'] >= 0])
+    if math.isclose(payments, payments_txns, abs_tol=0.001):
         pass
     else:
-        raise DebitAmountDontMatchError(
-            'Total amount of new transactions does not match to be '
-            'debited amount.' +
-            f' Sum new transactions = {total_amount:,.2f}' +
-            f' Amount to be debited = {debit_value:,.2f}')
+        raise PaymentsDontMatchError(
+            'Payments value doesn\'t match sum of all payment transactions.' +
+            f' Payments value = {payments:,.2f}' +
+            f' Sum all payment transactions = {payments_txns:,.2f}')
+    # check new charges transactions match
+    new_charges_txn = sum([txn['Amount']
+                           for txn in transactions if txn['Amount'] < 0])
+    if math.isclose(new_charges, new_charges_txn, abs_tol=0.001):
+        pass
+    else:
+        raise NewChargesDontMatchError(
+            'New charges value doesn\'t match sum of all '
+            'charges transactions.' +
+            f' New charges value = {new_charges:,.2f}' +
+            f' Sum all charges transactions = {new_charges_txn:,.2f}')
+    # check closing balance
+    closing_chk = opening_balance + payments_txns + new_charges_txn
+    if math.isclose(closing_balance, closing_chk, abs_tol=0.001):
+        pass
+    else:
+        raise ClosingBalanceDontMatchError(
+            'Closing balance value doesn\'t match calculated closing balance.' +
+            f' Closing balance = {closing_balance:,.2f}' +
+            f' Calculated closing balance = {closing_chk:,.2f}')
 
 
 def save_to_csv(transactions, pdf_file):
@@ -267,12 +266,12 @@ def save_to_csv(transactions, pdf_file):
     file = open(csv_file_name, 'w', newline='')
     csv_file = csv.writer(file, delimiter=';')
     for idx, txn in enumerate(transactions):
-        # print('---------------------------------------------------------------')
-        # print('transaction number : ' + str(idx + 1))
-        # print('posting date       : ' + txn['PostingDate'])
-        # print('transaction date   : ' + txn['TransactionDate'])
-        # print('transaction details: ' + txn['TransactionDetails'])
-        # print('amount             : ' + str(txn['Amount']))
+        print('---------------------------------------------------------------')
+        print('transaction number : ' + str(idx + 1))
+        print('posting date       : ' + txn['PostingDate'])
+        print('transaction date   : ' + txn['TransactionDate'])
+        print('transaction details: ' + txn['TransactionDetails'])
+        print('amount             : ' + str(txn['Amount']))
         row = [txn['PostingDate'],
                txn['TransactionDate'],
                txn['TransactionDetails'],
