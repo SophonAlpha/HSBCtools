@@ -271,7 +271,8 @@ def save_to_csv(transactions, pdf_file):
         print('posting date       : ' + txn['PostingDate'])
         print('transaction date   : ' + txn['TransactionDate'])
         print('transaction details: ' + txn['TransactionDetails'])
-        print('amount             : ' + f'{txn["Amount"]:.2f}'.replace('.', ','))
+        print('amount             : ' + f'{txn["Amount"]:.2f}'.replace('.',
+                                                                       ','))
         row = [txn['PostingDate'],
                txn['TransactionDate'],
                txn['TransactionDetails'],
