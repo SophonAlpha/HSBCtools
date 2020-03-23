@@ -7,8 +7,6 @@ Transform HSBC current account CSV exports for import into WISO Main Geld.
 import argparse
 import glob
 import re
-import math
-import csv
 
 
 def main():
@@ -34,11 +32,12 @@ def process_csv_file(csv_file):
     txns = comma_to_semicolon(txns)
     txns = dot_to_comma(txns)
     txns = remove_excessive_spaces(txns)
+    save_csv(txns, csv_file)
     print()
 
 
 def remove_commas(txns):
-    pattern = re.compile(r',(?=[0-9]{1,3})', re.MULTILINE)
+    pattern = re.compile(r'(?<=[0-9]),(?=[0-9]{1,3})', re.MULTILINE)
     txns = pattern.sub('', txns)
     return txns
 
@@ -78,26 +77,13 @@ def sort_by_date(item):
     return year, month, day
 
 
-def save_to_csv(transactions, pdf_file):
+def save_csv(txns, csv_file):
     """
     Save extracted credit card transactions to CSV file.
     """
-    csv_file_name = pdf_file[:pdf_file.rfind('.')] + '.csv'
+    csv_file_name = csv_file[:csv_file.rfind('.')] + '_transformed' + '.csv'
     file = open(csv_file_name, 'w', newline='')
-    csv_file = csv.writer(file, delimiter=';')
-    for idx, txn in enumerate(transactions):
-        print('---------------------------------------------------------------')
-        print('transaction number : ' + str(idx + 1))
-        print('posting date       : ' + txn['PostingDate'])
-        print('transaction date   : ' + txn['TransactionDate'])
-        print('transaction details: ' + txn['TransactionDetails'])
-        print('amount             : ' + f'{txn["Amount"]:.2f}'.replace('.',
-                                                                       ','))
-        row = [txn['PostingDate'],
-               txn['TransactionDate'],
-               txn['TransactionDetails'],
-               f'{txn["Amount"]:.2f}'.replace('.', ',')]
-        csv_file.writerow(row)
+    file.write(txns)
     file.close()
 
 
