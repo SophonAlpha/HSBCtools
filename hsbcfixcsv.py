@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Transform HSBC current account CSV exports for import into WISO Main Geld.
+Transform HSBC current account CSV exports for import into WISO Mein Geld.
 """
 
 import argparse
